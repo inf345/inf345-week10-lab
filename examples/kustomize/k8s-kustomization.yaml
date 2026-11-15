@@ -1,0 +1,8 @@
+# Copy to k8s/kustomization.yaml. List EVERY file of k8s/ here: once this file exists,
+# Argo CD reads k8s/ through Kustomize and deploys only what is listed (prune deletes the rest).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml

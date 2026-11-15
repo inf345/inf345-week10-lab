@@ -1,0 +1,20 @@
+# Stretch goal 5 (not marked): why a Secret cannot live in Git.
+# It deploys THIS lab repository's secret-demo/manifests - not your project.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secret-demo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/inf345/inf345-week10-lab
+    targetRevision: main
+    path: secret-demo/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: secret-demo
+  syncPolicy:
+    automated:
+      prune: false               # deleting this Application leaves the experiment alone
+      selfHeal: true             # the point of the experiment

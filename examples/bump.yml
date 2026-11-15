@@ -1,0 +1,84 @@
+# Stretch goal 4 - let CI PROPOSE the deploy; a person still merges it.
+#
+# Paste the job below at the end of your ci.yml, under your publish job, at the same
+# indentation as publish: (two spaces). Fill the two blanks. Then, in your repository:
+# Settings -> Actions -> General -> Workflow permissions -> tick "Allow GitHub Actions to
+# create and approve pull requests" - otherwise the last step fails with a message that
+# GitHub Actions is not permitted to create pull requests.
+#
+# The checks on a pull request that GITHUB_TOKEN opened wait in an "approval required" state
+# (GitHub's rule against workflows triggering workflows): open the run and approve it.
+#
+# Why it does not loop: merging its pull request makes a new commit on main, CI builds an
+# image for it, and this job runs again. But that commit changed only the manifest file, so
+# the first step stops: nothing new to deploy. Without that check you would get a new pull
+# request for every merge, forever - the "image tag problem" from Monday's lecture.
+#
+# This header is a whole workflow so that it can be checked with actionlint and zizmor;
+# copy only the job.
+name: CI (bump example)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------- copy from here
+  deploy-pr:
+    name: Open a pull request that deploys this image
+    needs: ____                      # 1. the id of your publish job: deploy only what CI published
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write                # push a branch
+      pull-requests: write           # open a pull request
+    env:
+      FILE: ____                     # 2. the file with your image line, e.g. k8s/deployment.yaml
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2             # this commit and its parent: what did it change?
+
+      - name: Stop if this commit only changed the manifest (no loop)
+        id: what
+        run: |
+          changed=$(git diff --name-only HEAD^ HEAD)
+          if [ "$changed" = "$FILE" ]; then
+            echo "This commit only changed $FILE - nothing new to deploy."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write the new tag into the manifest
+        if: steps.what.outputs.skip != 'true'
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          sed -i -E "s#(image: ${image}):[0-9a-f]{40}#\1:${GITHUB_SHA}#" "$FILE"
+          git diff --stat
+
+      - name: Push a branch and open the pull request
+        if: steps.what.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short="${GITHUB_SHA::7}"
+          git switch -c "deploy/${short}"
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -am "Deploy ${short}"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "deploy/${short}"
+          gh pr create --base main --head "deploy/${short}" \
+            --title "Deploy ${short}" \
+            --body "CI published ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}. Merge to deploy it: Argo CD pulls it from Git."
+  # ---------------------------------------------------------- to here

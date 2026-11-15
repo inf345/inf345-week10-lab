@@ -1,0 +1,18 @@
+# The values a reader is expected to change. Everything else is in templates/.
+# Fill every blank (____) with the values from YOUR k8s/ files (M4).
+replicaCount: 2
+image:
+  repository: ghcr.io/____/____      # 1. your image, lowercase, without the tag
+  tag: "____"                        # 2. the full 40-character commit SHA - keep the quotes
+port: "____"                         # 3. the port your app reads from PORT - keep the quotes
+settings:                            # 4. every other setting your app reads (M4, blank 9)
+  ____: "____"
+secretKey: ____                      # 5. the key your app reads from app-secret (M4, blank 10)
+healthPath: /healthz
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi

@@ -1,0 +1,12 @@
+# A "prod" overlay: the files of k8s/, with two changes. Nothing is copied.
+# Render it:  kubectl kustomize overlays/prod
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../k8s
+replicas:
+  - name: ____                  # 1. your Deployment's name
+    count: 3
+images:
+  - name: ghcr.io/____/____     # 2. your image, exactly as in k8s/deployment.yaml, without the tag
+    newTag: "____"              # 3. the full SHA prod runs - a promotion is a change of this line
