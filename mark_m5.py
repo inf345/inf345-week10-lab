@@ -140,6 +140,8 @@ HELM_OPTIONS = {"valueFiles", "values", "valuesObject", "parameters", "releaseNa
 SYNC_OPTIONS_COPIED = re.compile(r"^(ServerSideApply|ApplyOutOfSyncOnly|PruneLast|"
                                  r"PrunePropagationPolicy|FailOnSharedResource|"
                                  r"SkipDryRunOnMissingResource)=\S+$")
+# kubectl wait on a CRD that has no status.conditions yet, or does not exist yet: retry.
+CRD_NOT_YET = re.compile(r"accessor error|NotFound|not found")
 PINNED = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])|sha256:[0-9a-f]{64}")
 
 
@@ -1415,10 +1417,24 @@ class Cluster:
         return self.kubectl("-n", NS_ARGO, "apply", "--server-side", "--force-conflicts",
                             "-f", manifest, timeout=INSTALL_SECONDS)
 
-    def crds(self):
-        return self.kubectl("wait", "--for", "condition=established", "--timeout=120s",
-                            "crd/applications.argoproj.io", "crd/appprojects.argoproj.io",
-                            timeout=150)
+    def crds(self, seconds=150):
+        """Wait until Argo CD's two CRDs are Established.
+
+        Right after the install a new CRD can still have status.conditions = null, and
+        kubectl (1.37 at least) then exits at once with ".status.conditions accessor error:
+        <nil> is of the type <nil>" instead of waiting. That error, and NotFound, mean "not
+        yet": try again every 2 s, for `seconds` in all. Any other error is returned at once.
+        (Found by a student's pull-request job, 21 Nov 2026.)"""
+        t0 = self.clock.now()
+        while True:
+            left = int(min(120, max(10, seconds - (self.clock.now() - t0))))
+            rc, out, err = self.kubectl("wait", "--for", "condition=established",
+                                        f"--timeout={left}s", "crd/applications.argoproj.io",
+                                        "crd/appprojects.argoproj.io", timeout=left + 30)
+            if rc == 0 or not CRD_NOT_YET.search(err or "") \
+                    or self.clock.now() - t0 >= seconds:
+                return rc, out, err
+            self.clock.sleep(2)
 
     def rollout(self, ns, what, seconds):
         return self.kubectl("-n", ns, "rollout", "status", what, f"--timeout={seconds}s",
